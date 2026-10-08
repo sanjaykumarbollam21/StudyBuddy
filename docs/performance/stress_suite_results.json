@@ -1,0 +1,82 @@
+{
+  "timestamp": "2026-10-08T03:53:12.593290+00:00",
+  "database": "sqlite_aiosqlite",
+  "pyq_benchmarks": {
+    "5000_pyqs": {
+      "count": 5000,
+      "insertion_ms": 2676.09,
+      "compound_query_avg_ms": 7.87,
+      "compound_query_min_ms": 5.51,
+      "paginated_query_ms": 10.11,
+      "allocated_ram_mb": 4.07
+    },
+    "10000_pyqs": {
+      "count": 10000,
+      "insertion_ms": 2396.17,
+      "compound_query_avg_ms": 6.52,
+      "compound_query_min_ms": 4.82,
+      "paginated_query_ms": 10.4,
+      "allocated_ram_mb": 4.13
+    },
+    "25000_pyqs": {
+      "count": 25000,
+      "insertion_ms": 7348.99,
+      "compound_query_avg_ms": 5.8,
+      "compound_query_min_ms": 4.79,
+      "paginated_query_ms": 14.9,
+      "allocated_ram_mb": 4.14
+    },
+    "50000_pyqs": {
+      "count": 50000,
+      "insertion_ms": 12026.93,
+      "compound_query_avg_ms": 5.93,
+      "compound_query_min_ms": 5.16,
+      "paginated_query_ms": 19.03,
+      "allocated_ram_mb": 4.14
+    }
+  },
+  "current_affairs_benchmarks": {
+    "1000_records": {
+      "count": 1000,
+      "insertion_ms": 679.38,
+      "priority_query_ms": 13.45,
+      "rows_returned": 20
+    },
+    "5000_records": {
+      "count": 5000,
+      "insertion_ms": 3121.22,
+      "priority_query_ms": 13.58,
+      "rows_returned": 20
+    }
+  },
+  "syllabus_benchmarks": {
+    "100_nodes": {
+      "count": 100,
+      "insertion_ms": 48.62,
+      "branch_traversal_ms": 6.91,
+      "nodes_found": 50
+    },
+    "500_nodes": {
+      "count": 500,
+      "insertion_ms": 226.65,
+      "branch_traversal_ms": 9.4,
+      "nodes_found": 250
+    }
+  },
+  "mastery_benchmarks": {
+    "count": 1000,
+    "insertion_ms": 534.72,
+    "weak_topics_query_ms": 10.57
+  },
+  "revision_benchmarks": {
+    "count": 10000,
+    "insertion_ms": 8240.71,
+    "due_queue_query_ms": 13.72,
+    "due_items_count": 30
+  },
+  "resource_profile": {
+    "current_memory_mb": 5.53,
+    "peak_memory_mb": 17.47,
+    "db_file_size_mb": 42.87
+  }
+}

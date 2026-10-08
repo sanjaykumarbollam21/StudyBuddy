@@ -1,0 +1,85 @@
+# Python
+__pycache__/
+**/__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+build/
+**/build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+.pytest_cache/
+**/.pytest_cache/
+
+# Databases & local persistent files
+*.db
+*.sqlite
+*.sqlite3
+study_buddy.db
+database/*.db
+
+# Uploads & Storage
+storage/
+**/storage/
+uploads/
+**/uploads/
+
+# Flutter / Dart
+.dart_tool/
+**/.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.pub-cache/
+.pub/
+/build/
+**/build/
+ios/Flutter/ephemeral/
+**/ephemeral/
+
+# Android & Build Artifacts
+*.apk
+*.aab
+*.keystore
+*.jks
+android/app/debug/
+android/app/profile/
+android/app/release/
+android/.gradle/
+**/.gradle/
+
+# IDE & OS
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Environment & Secrets (Keep .env.example)
+.env
+*.env
+**/.env
+*.local.env
+!*.env.example
+
+# Test Screenshots & Dumps in root
+screen_*.png
+s2.png

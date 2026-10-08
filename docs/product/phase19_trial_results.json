@@ -1,0 +1,94 @@
+{
+  "timestamp": "2026-10-08T05:13:26.137477+00:00",
+  "aspirant_id": "aspirant-upsc-2026",
+  "workflows": {
+    "profile_creation": "PASS",
+    "day_zero_priority": {
+      "status": "PASS",
+      "polity_priority": 70.75,
+      "history_priority": 44.5,
+      "explanation": "Polity is today's top priority (Priority Score: 70.8 vs History: 44.5) because your mastery is low (42.0%), recurring misconceptions exist in Article 21 & Preventive Detention, and Polity accounts for ~15% of Prelims Paper I."
+    },
+    "socratic_teaching": {
+      "status": "PASS",
+      "scaffolding_applied": true,
+      "error_classified": "misconception"
+    },
+    "pyq_practice": {
+      "status": "PASS",
+      "correct_count": 5,
+      "net_marks": 6.7,
+      "errors_profiled": {
+        "knowledge_gap": 2,
+        "careless_error": 1,
+        "reading_error": 1,
+        "guessing_error": 1
+      }
+    },
+    "mastery_and_revision": {
+      "status": "PASS",
+      "prior_mastery": 42.0,
+      "updated_mastery": 44.0,
+      "revision_scheduled_days": 1
+    },
+    "planner_recommendation": {
+      "status": "PASS",
+      "action": "socratic_lesson",
+      "reasoning": "You have 45 minutes. Let us rebuild upsc_economy_monetary_policy step-by-step with your Socratic Teacher beside you."
+    },
+    "current_affairs_linking": {
+      "status": "PASS",
+      "tripartite": {
+        "FACT (Official Record)": "SC ruling specifies advisory board must review cases within 9 weeks under Art 22(4).",
+        "ANALYSIS (Editorial / Judicial Commentary)": "Executive discretion often bypasses standard criminal procedure by invoking public order.",
+        "AI INTERPRETATION (Syllabus Linking)": "Links directly to GS-II Executive Discretion and GS-II Fundamental Rights (Art 21, 22). Related PYQ: Prelims 2017 & Mains GS2 2021."
+      }
+    },
+    "mains_answer_improvement": {
+      "status": "PASS",
+      "attempt1_score": 4.2,
+      "attempt2_score": 7.8,
+      "improvement_delta": 3.6
+    },
+    "csat_sprint": {
+      "status": "PASS",
+      "score": 15.0,
+      "accuracy_pct": 70.0,
+      "duration_mins": 14.5
+    },
+    "mock_adaptation": {
+      "status": "PASS",
+      "prior_priority": 52.0,
+      "adapted_priority": 75.5
+    },
+    "micro_session_triage": {
+      "status": "PASS",
+      "allocation": {
+        "total_minutes": 45,
+        "slot_1": {
+          "minutes": 20,
+          "action": "Socratic Reteach: Monetary Policy transmission & Repo mechanism"
+        },
+        "slot_2": {
+          "minutes": 15,
+          "action": "Targeted Drill: 8 Economy PYQs (2018-2023)"
+        },
+        "slot_3": {
+          "minutes": 10,
+          "action": "Active Recall Flashcards: Article 21 & CSAT Speed Math"
+        }
+      }
+    },
+    "missed_day_recovery": {
+      "status": "PASS",
+      "missed_days": 1,
+      "daily_budget_preserved": 240,
+      "overload_prevented": true
+    },
+    "data_trust": {
+      "status": "PASS",
+      "official_pyqs_count": 10,
+      "hashed_current_affairs_count": 1
+    }
+  }
+}
