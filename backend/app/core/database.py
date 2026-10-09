@@ -15,9 +15,15 @@ if settings.DATABASE_URL.startswith("sqlite"):
     engine_kwargs["connect_args"] = connect_args
 else:
     # Production PostgreSQL async connection (asyncpg)
-    engine_kwargs["pool_pre_ping"] = True
-    engine_kwargs["pool_size"] = 5
-    engine_kwargs["max_overflow"] = 10
+    import os
+    is_serverless = os.getenv("VERCEL") == "1" or os.getenv("AWS_LAMBDA_FUNCTION_NAME") is not None
+    if is_serverless:
+        from sqlalchemy.pool import NullPool
+        engine_kwargs["poolclass"] = NullPool
+    else:
+        engine_kwargs["pool_pre_ping"] = True
+        engine_kwargs["pool_size"] = 5
+        engine_kwargs["max_overflow"] = 10
 
 engine = create_async_engine(
     settings.DATABASE_URL,
