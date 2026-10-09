@@ -6,12 +6,26 @@ from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sess
 from app.main import app
 from app.core.database import Base, get_db
 
-# Use an in-memory SQLite database for isolated fast tests
-TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
+# Use configurable test database URL (PostgreSQL via asyncpg or SQLite in-memory)
+raw_test_db_url = os.environ.get("TEST_DATABASE_URL", "sqlite+aiosqlite:///:memory:")
+if raw_test_db_url.startswith("postgres://"):
+    raw_test_db_url = raw_test_db_url.replace("postgres://", "postgresql+asyncpg://", 1)
+elif raw_test_db_url.startswith("postgresql://") and not raw_test_db_url.startswith("postgresql+"):
+    raw_test_db_url = raw_test_db_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+
+TEST_DATABASE_URL = raw_test_db_url
+
+connect_args = {}
+engine_kwargs = {"future": True}
+if TEST_DATABASE_URL.startswith("sqlite"):
+    connect_args["check_same_thread"] = False
+    engine_kwargs["connect_args"] = connect_args
+else:
+    engine_kwargs["pool_pre_ping"] = True
 
 test_engine = create_async_engine(
     TEST_DATABASE_URL,
-    connect_args={"check_same_thread": False}
+    **engine_kwargs
 )
 
 TestingSessionLocal = async_sessionmaker(

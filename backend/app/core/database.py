@@ -5,14 +5,23 @@ from app.core.config import settings
 
 # Configure SQLite or PostgreSQL async connection
 connect_args = {}
+engine_kwargs = {
+    "echo": settings.DB_ECHO,
+    "future": True,
+}
+
 if settings.DATABASE_URL.startswith("sqlite"):
-    connect_args = {"check_same_thread": False}
+    connect_args["check_same_thread"] = False
+    engine_kwargs["connect_args"] = connect_args
+else:
+    # Production PostgreSQL async connection (asyncpg)
+    engine_kwargs["pool_pre_ping"] = True
+    engine_kwargs["pool_size"] = 5
+    engine_kwargs["max_overflow"] = 10
 
 engine = create_async_engine(
     settings.DATABASE_URL,
-    echo=settings.DB_ECHO,
-    future=True,
-    connect_args=connect_args
+    **engine_kwargs
 )
 
 AsyncSessionLocal = async_sessionmaker(

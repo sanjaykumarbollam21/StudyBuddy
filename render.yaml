@@ -1,0 +1,66 @@
+# ==============================================================================
+# Study Buddy - Render Blueprint Specification
+# Deploys FastAPI Cloud Backend (Connected to External Neon PostgreSQL)
+# ==============================================================================
+
+services:
+  - type: web
+    name: study-buddy-api
+    runtime: docker
+    dockerfilePath: backend/Dockerfile
+    dockerContext: backend
+    plan: starter # Starter or free tier
+    region: oregon # Choose closest region: oregon, frankfurt, ohio, singapore
+    healthCheckPath: /health
+    autoDeploy: true
+
+    envVars:
+      - key: PORT
+        value: 8000
+      - key: ENVIRONMENT
+        value: production
+      - key: DEBUG
+        value: false
+
+      # External PostgreSQL database (e.g. Neon connection string)
+      # Enter your Neon connection string in the Render Dashboard when creating service
+      - key: DATABASE_URL
+        sync: false
+      - key: DB_ECHO
+        value: false
+
+      # Cryptographically secure random JWT secret generated automatically by Render
+      - key: SECRET_KEY
+        generateValue: true
+      - key: ALGORITHM
+        value: HS256
+      - key: ACCESS_TOKEN_EXPIRE_MINUTES
+        value: 1440
+
+      # AI Tutor Provider & Secrets (enter your keys in Render Dashboard)
+      - key: AI_MODE
+        value: cloud
+      - key: AI_DEFAULT_PROVIDER
+        value: gemini
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
+
+      # CORS Configuration (wildcard or your production Flutter web/mobile origin)
+      - key: CORS_ORIGINS
+        value: '["*"]'
+
+      # Embeddings & RAG
+      - key: EMBEDDING_PROVIDER
+        value: local
+      - key: EMBEDDING_MODEL
+        value: BAAI/bge-small-en-v1.5
+      - key: STORAGE_TYPE
+        value: local
+      - key: UPLOAD_DIR
+        value: ./uploads
