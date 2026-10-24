@@ -29,6 +29,7 @@ class ConceptStep(BaseModel):
     analogy: str
     check_question: str
     expected_core_concept: str
+    key_ideas: List[str] = Field(default_factory=list)
     key_terms: List[str] = Field(default_factory=list)
     common_misconceptions: Dict[str, str] = Field(default_factory=dict)
     simpler_analogy: str = ""

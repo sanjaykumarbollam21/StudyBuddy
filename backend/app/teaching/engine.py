@@ -198,11 +198,18 @@ class TeachingEngine:
             action_type=action_type,
         )
 
-        # BRANCH A: Student answered correctly or partially correctly
+        # Check if this turn is an answer to a previous Turn-1 partial follow-up question
+        was_partial_followup = getattr(session, "partial_followup_pending", False)
+        if was_partial_followup:
+            session.partial_followup_pending = False
+
+        # BRANCH A: Student answered correctly OR advanced after partial follow-up/struggle
         if eval_result.verdict == EvaluationVerdict.CORRECT or (
-            eval_result.verdict == EvaluationVerdict.PARTIALLY_CORRECT and session.struggle_count > 0
+            eval_result.verdict == EvaluationVerdict.PARTIALLY_CORRECT and (session.struggle_count > 0 or was_partial_followup)
         ):
-            session.mastery_score = min(100.0, session.mastery_score + eval_result.mastery_delta)
+            # If advancing after partial follow-up, award remaining delta (+15% if correct, +5% if partial)
+            delta = eval_result.mastery_delta if not was_partial_followup else (15.0 if eval_result.verdict == EvaluationVerdict.CORRECT else 5.0)
+            session.mastery_score = max(0.0, min(100.0, session.mastery_score + delta))
             session.struggle_count = 0
 
             # Advance to next step if available
@@ -230,7 +237,7 @@ class TeachingEngine:
                         question=next_step.check_question,
                         evaluation_verdict=eval_result.verdict,
                         feedback=eval_result.feedback,
-                        mastery_delta=eval_result.mastery_delta,
+                        mastery_delta=delta,
                     )
                 )
 
@@ -249,6 +256,7 @@ class TeachingEngine:
                         "verdict": eval_result.verdict.value,
                         "feedback": eval_result.feedback,
                         "is_correct": True,
+                        "source": eval_result.source,
                     },
                     mastery_percentage=session.mastery_score,
                     current_step_number=session.current_step_index + 1,
@@ -278,7 +286,7 @@ class TeachingEngine:
                         content=completion_msg,
                         evaluation_verdict=eval_result.verdict,
                         feedback=eval_result.feedback,
-                        mastery_delta=eval_result.mastery_delta,
+                        mastery_delta=delta,
                     )
                 )
 
@@ -294,6 +302,7 @@ class TeachingEngine:
                         "verdict": eval_result.verdict.value,
                         "feedback": eval_result.feedback,
                         "is_correct": True,
+                        "source": eval_result.source,
                     },
                     mastery_percentage=100.0,
                     current_step_number=session.total_steps,
@@ -302,7 +311,66 @@ class TeachingEngine:
                     suggested_actions=["Take a Practice Quiz", "Learn Next Topic", "Review Summary"],
                 )
 
-        # BRANCH B: Student struggled or held a misconception -> Trigger Remediation
+        # BRANCH A2: Turn-1 Partial Correctness (No new state, stay in CHECK_UNDERSTANDING)
+        elif eval_result.verdict == EvaluationVerdict.PARTIALLY_CORRECT and session.struggle_count == 0 and not was_partial_followup:
+            # Award +10% mastery for partial understanding on the first attempt
+            session.mastery_score = max(0.0, min(100.0, session.mastery_score + 10.0))
+            session.partial_followup_pending = True
+
+            # Target the first missing key idea
+            missing_idea = (eval_result.ideas_missing[0] if eval_result.ideas_missing else "how this applies overall").strip()
+            followup_q = f"You're on the right track! Can you explain {missing_idea.lower().rstrip('.')}?"
+
+            feedback_clean = eval_result.feedback.strip()
+            # Leak guard: Check if feedback states key ideas or expected core concept
+            if self._detect_answer_leak(feedback_clean, current_step):
+                feedback_clean = "You've captured part of the core intuition! Let's connect it to the missing piece."
+
+            teacher_msg = (
+                f"{feedback_clean}\n\n"
+                f"🎯 Quick follow-up question:\n"
+                f"{followup_q}"
+            )
+
+            session.dialogue.append(
+                StudentDialogueTurn(
+                    turn_index=len(session.dialogue),
+                    speaker="teacher",
+                    state=TeachingState.CHECK_UNDERSTANDING,
+                    content=teacher_msg,
+                    concept_title=current_step.title,
+                    question=followup_q,
+                    evaluation_verdict=eval_result.verdict,
+                    feedback=feedback_clean,
+                    mastery_delta=10.0,
+                )
+            )
+
+            await self._persist_mastery(session)
+            await self.save_session(session)
+
+            return TeacherTurnResponse(
+                session_id=session.session_id,
+                state=session.current_state,
+                teacher_message=teacher_msg,
+                concept_title=current_step.title,
+                explanation=current_step.explanation,
+                analogy=current_step.analogy,
+                check_question=followup_q,
+                evaluation={
+                    "verdict": eval_result.verdict.value,
+                    "feedback": feedback_clean,
+                    "is_correct": False,
+                    "source": eval_result.source,
+                },
+                mastery_percentage=session.mastery_score,
+                current_step_number=session.current_step_index + 1,
+                total_steps=session.total_steps,
+                suggested_actions=["Give me a hint", "Explain simpler"],
+                source_citation=current_step.source_citation,
+            )
+
+        # BRANCH B: Student struggled, held a misconception, or failed follow-up -> Trigger Remediation
         session.struggle_count += 1
         session.current_state = TeachingState.RETEACHING
 
@@ -312,13 +380,49 @@ class TeachingEngine:
             misconception=eval_result.misconception_identified,
         )
 
+        # Show one concise feedback line without duplicating re_explanation
+        feedback_line = (eval_result.feedback or remed.re_explanation or "Let's revisit this concept.").strip()
         remed_msg = (
-            f"{eval_result.feedback}\n\n"
-            f"{remed.re_explanation}\n\n"
+            f"{feedback_line}\n\n"
             f"Let's simplify it.\n\n"
             f"{remed.simpler_analogy}\n\n"
             f"🎯 {remed.simpler_question}"
         )
+
+        # Answer Leak Guard: Check if the reply leaks key ideas or expected answer
+        leaked_phrase = self._detect_answer_leak(remed_msg, current_step)
+        if leaked_phrase:
+            # Regenerate once with strict instruction
+            remed_retry = await self.remediation.create_remediation(
+                step=current_step,
+                student_answer=student_answer,
+                misconception=eval_result.misconception_identified,
+                strict_no_leak=True,
+                prohibited_phrase=leaked_phrase,
+            )
+            fb_leaked = self._detect_answer_leak(feedback_line, current_step)
+            retry_feedback = (
+                remed_retry.re_explanation.strip()
+                if fb_leaked
+                else (feedback_line or remed_retry.re_explanation).strip()
+            )
+            remed_msg_retry = (
+                f"{retry_feedback}\n\n"
+                f"Let's simplify it.\n\n"
+                f"{remed_retry.simpler_analogy}\n\n"
+                f"🎯 {remed_retry.simpler_question}"
+            )
+            # If it STILL leaks, fall back to a safe generic socratic hint/analogy
+            if self._detect_answer_leak(remed_msg_retry, current_step):
+                remed_msg = (
+                    "Not quite! Let's approach this from a simpler, concrete angle.\n\n"
+                    "Let's simplify it.\n\n"
+                    f"{current_step.simpler_analogy or current_step.analogy}\n\n"
+                    f"🎯 Consider how the pieces interact in this scenario. What happens next?"
+                )
+            else:
+                remed_msg = remed_msg_retry
+                remed = remed_retry
 
         session.dialogue.append(
             StudentDialogueTurn(
@@ -348,6 +452,7 @@ class TeachingEngine:
                 "feedback": eval_result.feedback,
                 "misconception": eval_result.misconception_identified,
                 "is_correct": False,
+                "source": eval_result.source,
             },
             mastery_percentage=session.mastery_score,
             current_step_number=session.current_step_index + 1,
@@ -355,6 +460,32 @@ class TeachingEngine:
             suggested_actions=["Neither can continue", "Give me a hint", "Try another example"],
             source_citation=current_step.source_citation,
         )
+
+    def _detect_answer_leak(self, text: str, step: ConceptStep) -> Optional[str]:
+        """
+        Detects whether the teacher message leaks the concept's key ideas verbatim
+        or the expected core concept on a wrong or partial attempt.
+        """
+        text_lower = text.lower()
+        candidates = []
+        if step.expected_core_concept:
+            candidates.append(step.expected_core_concept.lower().strip())
+        for idea in (step.key_ideas or []):
+            candidates.append(idea.lower().strip())
+
+        for cand in candidates:
+            cand_clean = cand.rstrip(".")
+            if len(cand_clean) > 15 and cand_clean in text_lower:
+                return cand_clean
+
+        # Check for three CAP terms together if CAP topic
+        if "cap" in step.title.lower() or "cap" in step.check_question.lower():
+            if "consistency, availability, and partition tolerance" in text_lower or (
+                "consistency" in text_lower and "availability" in text_lower and "partition tolerance" in text_lower
+            ):
+                return "consistency, availability, and partition tolerance"
+
+        return None
 
     async def _persist_mastery(self, session: TeachingSessionModel):
         """Persists updated mastery percentage in the database and updates roadmap progress."""

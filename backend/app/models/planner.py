@@ -30,7 +30,13 @@ class StudyPlan(Base):
     created_at = Column(DateTime, default=utc_now)
     updated_at = Column(DateTime, default=utc_now, onupdate=utc_now)
 
-    items = relationship("StudyPlanItem", back_populates="plan", cascade="all, delete-orphan", order_by="StudyPlanItem.day_number")
+    items = relationship(
+        "StudyPlanItem",
+        back_populates="plan",
+        cascade="all, delete-orphan",
+        order_by="StudyPlanItem.day_number",
+        lazy="selectin",
+    )
 
 
 class StudyPlanItem(Base):

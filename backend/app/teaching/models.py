@@ -17,6 +17,7 @@ class TeachingSessionModel(BaseModel):
     steps: List[ConceptStep] = Field(default_factory=list)
     dialogue: List[StudentDialogueTurn] = Field(default_factory=list)
     struggle_count: int = 0
+    partial_followup_pending: bool = False
     mastery_score: float = 0.0
     is_completed: bool = False
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
@@ -57,3 +58,13 @@ class TeacherTurnResponse(BaseModel):
     is_lesson_completed: bool = False
     suggested_actions: List[str] = Field(default_factory=list)
     source_citation: Optional[Dict[str, Any]] = None
+
+class ActiveSessionSummary(BaseModel):
+    session_id: str
+    topic: str
+    concept_title: Optional[str] = None
+    current_step_index: int = 0
+    total_steps: int = 1
+    mastery_score: float = 0.0
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    last_updated: Optional[datetime] = None

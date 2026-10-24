@@ -26,6 +26,7 @@ class LLMProvider(ABC):
         student_answer: str,
         common_misconceptions: Optional[Dict[str, str]] = None,
         context_text: str = "",
+        key_ideas: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
         """
         Diagnostically evaluate student response.
@@ -47,6 +48,8 @@ class LLMProvider(ABC):
         misconception: Optional[str],
         original_analogy: str,
         context_text: str = "",
+        strict_no_leak: bool = False,
+        prohibited_phrase: str = "",
     ) -> Dict[str, Any]:
         """
         Generate simpler remediation when student struggles.

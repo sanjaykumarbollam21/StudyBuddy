@@ -3,7 +3,7 @@ import socket
 from httpx import AsyncClient, ASGITransport
 from app.main import app
 from app.teaching.engine import TeachingEngine
-from app.teaching.state import TeachingState, EvaluationVerdict
+from app.teaching.state import TeachingState, EvaluationVerdict, ConceptStep
 from app.tutor.providers.local import LocalLLMProvider
 from app.tutor.providers.mock import MockLLMProvider
 
@@ -420,3 +420,189 @@ async def test_teaching_engine_db_backed_turn_progression(db_session):
     assert db_sess3.mastery_score > 0.0
     assert db_sess3.current_step_index == 1
     assert len(db_sess3.dialogue) >= 5
+
+
+@pytest.mark.asyncio
+async def test_get_active_teaching_sessions_endpoint(client: AsyncClient, db_session: AsyncSession):
+    """
+    Test GET /api/v1/teaching/sessions/active:
+    1. Returns empty list when no active sessions exist.
+    2. Returns only caller's active (incomplete) sessions with required summary fields.
+    3. Excludes sessions belonging to other users.
+    4. Excludes completed sessions.
+    """
+    from app.teaching.service import TeachingSessionService
+
+    # 1. Signup Student A
+    signup_a = await client.post(
+        "/api/v1/auth/signup",
+        json={"email": "active_a@example.com", "password": "Password123!", "full_name": "Student A"},
+    )
+    assert signup_a.status_code == 201
+    token_a = signup_a.json()["access_token"]
+    headers_a = {"Authorization": f"Bearer {token_a}"}
+
+    # 2. Signup Student B
+    signup_b = await client.post(
+        "/api/v1/auth/signup",
+        json={"email": "active_b@example.com", "password": "Password123!", "full_name": "Student B"},
+    )
+    assert signup_b.status_code == 201
+    token_b = signup_b.json()["access_token"]
+    headers_b = {"Authorization": f"Bearer {token_b}"}
+
+    # 3. Initially, Student A has no sessions -> returns empty list
+    resp0 = await client.get("/api/v1/teaching/sessions/active", headers=headers_a)
+    assert resp0.status_code == 200
+    assert resp0.json() == []
+
+    # 4. Student A starts a session on 'Operating Systems'
+    start_a = await client.post(
+        "/api/v1/teaching/start",
+        headers=headers_a,
+        json={"topic": "Deadlocks", "subject": "Operating Systems"},
+    )
+    assert start_a.status_code == 200
+    sess_a_id = start_a.json()["session_id"]
+
+    # 5. Student B starts a session on 'Machine Learning'
+    start_b = await client.post(
+        "/api/v1/teaching/start",
+        headers=headers_b,
+        json={"topic": "Neural Networks", "subject": "AI"},
+    )
+    assert start_b.status_code == 200
+    sess_b_id = start_b.json()["session_id"]
+
+    # 6. Verify Student A's active sessions -> only sees sess_a_id, not sess_b_id
+    resp_a = await client.get("/api/v1/teaching/sessions/active", headers=headers_a)
+    assert resp_a.status_code == 200
+    data_a = resp_a.json()
+    assert len(data_a) == 1
+    session_item = data_a[0]
+    assert session_item["session_id"] == sess_a_id
+    assert session_item["topic"] == "Deadlocks"
+    assert "concept_title" in session_item
+    assert session_item["current_step_index"] >= 0
+    assert session_item["total_steps"] >= 1
+    assert "mastery_score" in session_item
+    assert "updated_at" in session_item
+
+    # 7. Verify Student B's active sessions -> only sees sess_b_id
+    resp_b = await client.get("/api/v1/teaching/sessions/active", headers=headers_b)
+    assert resp_b.status_code == 200
+    data_b = resp_b.json()
+    assert len(data_b) == 1
+    assert data_b[0]["session_id"] == sess_b_id
+    assert data_b[0]["topic"] == "Neural Networks"
+
+    # 8. Mark Student A's session as completed in DB
+    sess_a_model = await TeachingSessionService.get_session(db_session, sess_a_id)
+    assert sess_a_model is not None
+    sess_a_model.is_completed = True
+    await TeachingSessionService.save_session(db_session, sess_a_model)
+
+    # 9. Verify completed session is excluded -> returns empty list for Student A
+    resp_a_completed = await client.get("/api/v1/teaching/sessions/active", headers=headers_a)
+    assert resp_a_completed.status_code == 200
+    assert resp_a_completed.json() == []
+
+
+@pytest.mark.asyncio
+async def test_remediation_combined_message_structure_no_duplicates():
+    """
+    Verifies that during remediation, engine.py shows one concise feedback line,
+    followed by the analogy and simpler question, without duplicate re_explanation text.
+    """
+    engine = TeachingEngine(llm_provider=MockLLMProvider())
+
+    start = await engine.start_session(user_id="test-student-remed", topic="Deadlocks")
+    await engine.process_student_turn(session_id=start.session_id, student_answer="I have basic awareness.")
+
+    remed_turn = await engine.process_student_turn(
+        session_id=start.session_id,
+        student_answer="Deadlock happens because the CPU is too slow.",
+    )
+
+    assert remed_turn.state == TeachingState.RETEACHING
+    msg = remed_turn.teacher_message
+
+    # Check structure:
+    # 1. Single feedback line at top
+    # 2. "Let's simplify it." with simpler analogy
+    # 3. Simpler question with 🎯
+    assert "Let's simplify it." in msg
+    assert "🎯" in msg
+
+    # Verify no duplicate repeated explanation paragraphs
+    paragraphs = [p.strip() for p in msg.split("\n\n") if p.strip()]
+    assert len(paragraphs) == 4
+    # Paragraph 0: feedback line
+    assert "performance" in paragraphs[0].lower() or "deadlock" in paragraphs[0].lower()
+    # Paragraph 1: "Let's simplify it."
+    assert paragraphs[1] == "Let's simplify it."
+    # Paragraph 2: simpler analogy
+    assert "key" in paragraphs[2].lower()
+    # Paragraph 3: question
+    assert paragraphs[3].startswith("🎯")
+
+
+@pytest.mark.asyncio
+async def test_turn1_partial_credit_followup_flow():
+    """
+    Verifies that on Turn 1:
+    - Partially correct answer earns +10% mastery.
+    - Sends targeted follow-up question for missing key idea.
+    - State stays in CHECK_UNDERSTANDING (no new state).
+    - When student answers follow-up correctly, advances to next step.
+    """
+    engine = TeachingEngine(llm_provider=MockLLMProvider())
+    start = await engine.start_session(user_id="test-partial-1", topic="Deadlocks")
+    await engine.process_student_turn(session_id=start.session_id, student_answer="I have basic awareness.")
+
+    # Turn 1: Partially correct answer
+    turn1 = await engine.process_student_turn(
+        session_id=start.session_id,
+        student_answer="A process is stuck and unable to proceed.",
+    )
+    assert turn1.state == TeachingState.CHECK_UNDERSTANDING
+    assert turn1.mastery_percentage == 10.0
+    assert "follow-up" in turn1.teacher_message.lower() or "quick" in turn1.teacher_message.lower()
+
+    # Follow-up answer: Correct answer
+    turn2 = await engine.process_student_turn(
+        session_id=start.session_id,
+        student_answer="Because both processes hold resources and each waits for what the other has.",
+    )
+    assert turn2.evaluation["is_correct"] is True
+    assert turn2.mastery_percentage >= 25.0
+    assert turn2.current_step_number == 2
+
+
+@pytest.mark.asyncio
+async def test_answer_leak_guard():
+    """
+    Verifies that when a generated reply leaks the concept definition or key ideas,
+    the leak guard detects it and sanitizes/re-prompts to prevent answer giveaways.
+    """
+    engine = TeachingEngine(llm_provider=MockLLMProvider())
+    step = ConceptStep(
+        step_index=0,
+        title="CAP Theorem",
+        explanation="Consistency, Availability, and Partition tolerance",
+        analogy="Ice cream stands",
+        check_question="What are the three guarantees?",
+        expected_core_concept="Consistency, Availability, and Partition tolerance",
+        key_ideas=["consistency, availability, and partition tolerance"],
+    )
+
+    # Leaking message
+    leaking_msg = "The answer is consistency, availability, and partition tolerance. Can you try?"
+    assert engine._detect_answer_leak(leaking_msg, step) is not None
+
+    # Non-leaking message
+    clean_msg = "Think about whether you would prioritize uptime or up-to-date data during a partition."
+    assert engine._detect_answer_leak(clean_msg, step) is None
+
+
+

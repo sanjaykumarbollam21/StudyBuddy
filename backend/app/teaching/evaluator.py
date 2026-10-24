@@ -1,5 +1,5 @@
-from typing import Dict, Any, Optional
-from pydantic import BaseModel
+from typing import Dict, Any, Optional, List
+from pydantic import BaseModel, Field
 from app.teaching.state import ConceptStep, EvaluationVerdict
 from app.tutor.providers.base import LLMProvider
 
@@ -10,11 +10,15 @@ class EvaluationResult(BaseModel):
     confidence: float = 1.0
     mastery_delta: float = 0.0
     needs_remediation: bool = False
+    source: str = "model"
+    ideas_present: List[str] = Field(default_factory=list)
+    ideas_missing: List[str] = Field(default_factory=list)
 
 class AnswerEvaluationService:
     """
     Evaluates student responses against concept expectations,
     identifying correctness, partial understanding, and misconceptions.
+    Uses extraction-based LLM grading and derives verdicts deterministically in code.
     """
 
     def __init__(self, llm_provider: LLMProvider):
@@ -46,7 +50,7 @@ class AnswerEvaluationService:
                 mastery_delta=0.0,
             )
 
-        # Delegate evaluation to LLMProvider (local Socratic, mock, or cloud)
+        # Delegate extraction to LLMProvider
         eval_dict = await self.llm_provider.evaluate_student_answer(
             concept_title=step.title,
             question=step.check_question,
@@ -54,43 +58,81 @@ class AnswerEvaluationService:
             student_answer=student_answer,
             common_misconceptions=step.common_misconceptions,
             context_text=context_text,
+            key_ideas=step.key_ideas,
         )
 
-        verdict_str = eval_dict.get("verdict", "partially_correct").lower()
-        feedback = eval_dict.get("feedback", "")
+        ideas_present = list(eval_dict.get("ideas_present", []))
+        ideas_missing = list(eval_dict.get("ideas_missing", []))
         misconception = eval_dict.get("misconception_identified")
-        confidence = float(eval_dict.get("confidence", 0.8))
+        is_unsure = bool(eval_dict.get("is_off_topic_or_unsure", False))
+        feedback = str(eval_dict.get("feedback", ""))
+        confidence = float(eval_dict.get("confidence", 0.9))
+        source = str(eval_dict.get("source", "model"))
 
-        if verdict_str == "correct":
-            return EvaluationResult(
-                verdict=EvaluationVerdict.CORRECT,
-                feedback=feedback or "Exactly. You identified the key idea.",
-                mastery_delta=25.0,
-                needs_remediation=False,
-                confidence=confidence,
-            )
-        elif verdict_str == "misconception":
-            return EvaluationResult(
-                verdict=EvaluationVerdict.MISCONCEPTION,
-                feedback=feedback or "That is a common misconception.",
-                misconception_identified=misconception,
-                mastery_delta=0.0,
-                needs_remediation=True,
-                confidence=confidence,
-            )
-        elif verdict_str == "struggling":
-            return EvaluationResult(
-                verdict=EvaluationVerdict.STRUGGLING,
-                feedback=feedback or "Let's break this down into a simpler example.",
-                mastery_delta=0.0,
-                needs_remediation=True,
-                confidence=confidence,
-            )
+        ans_lower = student_answer.lower().strip()
+        is_explicit_dont_know = any(
+            p in ans_lower for p in ["don't know", "dont know", "no idea", "not sure", "explain this to me", "please explain"]
+        )
+
+        # DETERMINISTIC VERDICT DERIVATION IN CODE:
+        # - all ideas present -> correct
+        # - some ideas present -> partially_correct
+        # - a stated wrong belief -> misconception
+        # - nothing relevant or an explicit "don't know" -> struggling
+        if is_explicit_dont_know or is_unsure:
+            verdict = EvaluationVerdict.STRUGGLING
+            mastery_delta = 0.0
+            needs_remediation = True
+        elif misconception:
+            verdict = EvaluationVerdict.MISCONCEPTION
+            mastery_delta = 0.0
+            needs_remediation = True
+        elif "ideas_present" in eval_dict or "ideas_missing" in eval_dict:
+            # Extraction-based evaluation
+            if len(ideas_present) > 0 and len(ideas_missing) == 0:
+                verdict = EvaluationVerdict.CORRECT
+                mastery_delta = 25.0
+                needs_remediation = False
+            elif len(ideas_present) > 0:
+                verdict = EvaluationVerdict.PARTIALLY_CORRECT
+                mastery_delta = 10.0
+                needs_remediation = False
+            else:
+                verdict = EvaluationVerdict.STRUGGLING
+                mastery_delta = 0.0
+                needs_remediation = True
+        elif "verdict" in eval_dict:
+            # Backward compatibility with mock or direct verdict providers
+            v_raw = str(eval_dict["verdict"]).lower()
+            if v_raw == "correct":
+                verdict = EvaluationVerdict.CORRECT
+                mastery_delta = 25.0
+                needs_remediation = False
+            elif v_raw == "misconception":
+                verdict = EvaluationVerdict.MISCONCEPTION
+                mastery_delta = 0.0
+                needs_remediation = True
+            elif v_raw == "struggling":
+                verdict = EvaluationVerdict.STRUGGLING
+                mastery_delta = 0.0
+                needs_remediation = True
+            else:
+                verdict = EvaluationVerdict.PARTIALLY_CORRECT
+                mastery_delta = 10.0
+                needs_remediation = False
         else:
-            return EvaluationResult(
-                verdict=EvaluationVerdict.PARTIALLY_CORRECT,
-                feedback=feedback or "You're getting close, but there's a vital nuance to notice.",
-                mastery_delta=10.0,
-                needs_remediation=False,
-                confidence=confidence,
-            )
+            verdict = EvaluationVerdict.STRUGGLING
+            mastery_delta = 0.0
+            needs_remediation = True
+
+        return EvaluationResult(
+            verdict=verdict,
+            feedback=feedback or "Let's review this concept together.",
+            misconception_identified=misconception,
+            confidence=confidence,
+            mastery_delta=mastery_delta,
+            needs_remediation=needs_remediation,
+            source=source,
+            ideas_present=ideas_present,
+            ideas_missing=ideas_missing,
+        )

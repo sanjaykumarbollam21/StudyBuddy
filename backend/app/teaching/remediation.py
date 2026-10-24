@@ -24,12 +24,15 @@ class AdaptiveRemediationService:
         student_answer: str,
         misconception: Optional[str] = None,
         context_text: str = "",
+        strict_no_leak: bool = False,
+        prohibited_phrase: str = "",
     ) -> RemediationPackage:
         """
         Builds adaptive re-explanation with simpler analogies and guided questions.
+        Supports strict anti-leak mode to avoid revealing check question answers.
         """
-        # First check if the step already has tailored simpler analogy
-        if step.simpler_analogy and step.common_misconceptions and misconception:
+        # First check if the step already has tailored simpler analogy (and not in strict re-prompt)
+        if step.simpler_analogy and step.common_misconceptions and misconception and not strict_no_leak:
             re_expl = step.common_misconceptions.get(
                 misconception,
                 "Let's look at this from a simpler, more direct angle."
@@ -49,6 +52,8 @@ class AdaptiveRemediationService:
             misconception=misconception,
             original_analogy=step.analogy,
             context_text=context_text,
+            strict_no_leak=strict_no_leak,
+            prohibited_phrase=prohibited_phrase,
         )
 
         return RemediationPackage(

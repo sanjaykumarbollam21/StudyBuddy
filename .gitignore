@@ -83,3 +83,8 @@ Thumbs.db
 # Test Screenshots & Dumps in root
 screen_*.png
 s2.png
+
+# Evaluation results
+backend/evals/results/
+evals/results/
+

@@ -27,8 +27,30 @@ from app.core.telemetry import StructuredLoggingMiddleware
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup: create tables if they don't exist
+    import app.models  # Ensures all models are registered on Base.metadata
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+
+        def _run_sqlite_column_migrations(sync_conn):
+            from sqlalchemy import text
+            try:
+                res = sync_conn.execute(text("PRAGMA table_info(competitive_exam_profiles)"))
+                existing_cols = {row[1] for row in res.fetchall()}
+                if existing_cols:
+                    new_cols = {
+                        "version": "VARCHAR(20) DEFAULT '2027.1'",
+                        "effective_from": "DATETIME",
+                        "effective_until": "DATETIME",
+                        "source": "VARCHAR(255) DEFAULT 'Official Examination Commission Notification'",
+                        "source_url": "VARCHAR(500)",
+                    }
+                    for col_name, col_type in new_cols.items():
+                        if col_name not in existing_cols:
+                            sync_conn.execute(text(f"ALTER TABLE competitive_exam_profiles ADD COLUMN {col_name} {col_type}"))
+            except Exception:
+                pass
+
+        await conn.run_sync(_run_sqlite_column_migrations)
 
     # Rehydrate active teaching sessions and cleanup stale sessions (>24 hours)
     try:
@@ -36,6 +58,13 @@ async def lifespan(app: FastAPI):
             from app.teaching.service import TeachingSessionService
             await TeachingSessionService.cleanup_stale_sessions(db_sess, older_than_hours=24)
             await TeachingSessionService.rehydrate_active_sessions(db_sess)
+    except Exception:
+        pass
+
+    # Verify Gemini model availability on startup if configured
+    try:
+        from app.tutor.providers.gemini import check_gemini_model_availability
+        await check_gemini_model_availability()
     except Exception:
         pass
 

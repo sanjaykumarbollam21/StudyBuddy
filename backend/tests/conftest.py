@@ -38,6 +38,7 @@ TestingSessionLocal = async_sessionmaker(
 
 @pytest_asyncio.fixture(scope="function")
 async def db_session():
+    import app.models
     async with test_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     

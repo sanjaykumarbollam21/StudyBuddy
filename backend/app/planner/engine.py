@@ -153,6 +153,7 @@ class StudyPlannerEngine:
                 self.db.add(item)
             await self.db.commit()
             await self.db.refresh(plan)
+            plan.items = items
 
         return plan
 

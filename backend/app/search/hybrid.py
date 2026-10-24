@@ -18,12 +18,22 @@ class KnowledgeSearchService:
 
     def __init__(
         self,
-        vector_repo: VectorRepository,
-        embedding_provider: EmbeddingProvider,
+        vector_repo: Any,
+        embedding_provider: Optional[EmbeddingProvider] = None,
     ):
-        self.vector_repo = vector_repo
-        self.embedding_provider = embedding_provider
-        self.semantic_engine = SemanticSearchEngine(vector_repo, embedding_provider)
+        from sqlalchemy.ext.asyncio import AsyncSession
+        if isinstance(vector_repo, AsyncSession):
+            self.vector_repo = VectorRepository(vector_repo)
+        else:
+            self.vector_repo = vector_repo
+
+        if embedding_provider is None:
+            from app.embeddings import get_embedding_provider
+            self.embedding_provider = get_embedding_provider()
+        else:
+            self.embedding_provider = embedding_provider
+
+        self.semantic_engine = SemanticSearchEngine(self.vector_repo, self.embedding_provider)
         self.keyword_engine = KeywordSearchEngine()
         self.ranker = SearchResultRanker()
 

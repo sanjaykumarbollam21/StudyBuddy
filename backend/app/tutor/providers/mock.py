@@ -73,12 +73,17 @@ class MockLLMProvider(LLMProvider):
         student_answer: str,
         common_misconceptions: Optional[Dict[str, str]] = None,
         context_text: str = "",
+        key_ideas: Optional[List[str]] = None,
+        **kwargs,
     ) -> Dict[str, Any]:
         ans = student_answer.lower()
 
         if any(term in ans for term in ["don't know", "hint", "help", "not sure", "confused"]):
             return {
                 "verdict": "struggling",
+                "ideas_present": [],
+                "ideas_missing": key_ideas or [expected_concept],
+                "is_off_topic_or_unsure": True,
                 "feedback": "No problem! Let's approach it from a simpler angle.",
                 "misconception_identified": None,
                 "confidence": 1.0,
@@ -87,6 +92,8 @@ class MockLLMProvider(LLMProvider):
         if any(term in ans for term in ["cpu", "slow", "hardware", "speed"]):
             return {
                 "verdict": "misconception",
+                "ideas_present": [],
+                "ideas_missing": key_ideas or [expected_concept],
                 "feedback": "You're thinking about performance, which is a reasonable connection, but that's not the cause of deadlock.",
                 "misconception_identified": "CPU too slow",
                 "confidence": 0.95,
@@ -95,6 +102,8 @@ class MockLLMProvider(LLMProvider):
         if any(term in ans for term in ["waiting", "other has", "blocked", "circular", "neither", "held", "holds", "other"]):
             return {
                 "verdict": "correct",
+                "ideas_present": key_ideas or [expected_concept],
+                "ideas_missing": [],
                 "feedback": "Exactly. You identified the key idea: circular waiting.",
                 "misconception_identified": None,
                 "confidence": 0.98,
@@ -102,6 +111,8 @@ class MockLLMProvider(LLMProvider):
 
         return {
             "verdict": "partially_correct",
+            "ideas_present": (key_ideas[:1] if key_ideas else [expected_concept]),
+            "ideas_missing": (key_ideas[1:] if key_ideas and len(key_ideas) > 1 else ["other critical condition"]),
             "feedback": "You're touching on part of the problem. Remember to focus on resource ownership.",
             "misconception_identified": None,
             "confidence": 0.70,
@@ -114,6 +125,9 @@ class MockLLMProvider(LLMProvider):
         misconception: Optional[str],
         original_analogy: str,
         context_text: str = "",
+        strict_no_leak: bool = False,
+        prohibited_phrase: str = "",
+        **kwargs,
     ) -> Dict[str, Any]:
         return {
             "re_explanation": (

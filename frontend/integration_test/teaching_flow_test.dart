@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:frontend/core/errors/app_exception.dart';
+import 'package:frontend/features/auth/controllers/auth_controller.dart';
+import 'package:frontend/features/dashboard/screens/home_tab.dart';
 import 'package:frontend/features/teaching/models/teaching_model.dart';
 import 'package:frontend/features/teaching/screens/interactive_teacher_screen.dart';
 import 'package:frontend/features/teaching/services/teaching_api_service.dart';
@@ -11,6 +14,18 @@ import 'package:frontend/features/teaching/services/teaching_api_service.dart';
 class FakeTeachingApiService extends TeachingApiService {
   bool simulateFailure = false;
   int turnCount = 0;
+  List<ActiveTeachingSessionModel> activeSessions = [];
+  Map<String, TeachingSessionDetailModel> savedSessions = {};
+
+  @override
+  Future<List<ActiveTeachingSessionModel>> getActiveSessions() async {
+    return activeSessions;
+  }
+
+  @override
+  Future<TeachingSessionDetailModel?> getSession(String sessionId) async {
+    return savedSessions[sessionId];
+  }
 
   @override
   Future<TeachingTurnModel> startSession({
@@ -294,6 +309,118 @@ void main() {
 
         // 5. Assert SnackBar with Retry action appeared
         expect(find.text('Retry'), findsOneWidget);
+      },
+    );
+
+    // =========================================================================
+    // SCENARIO 4: Continue where you left off & Session Resumption
+    // =========================================================================
+    testWidgets(
+      'Continue where you left off: Leave session mid-way, verify dashboard card, resume session, and restore dialogue',
+      (tester) async {
+        SharedPreferences.setMockInitialValues({});
+        final authController = AuthController();
+        await authController.initialize();
+        await authController.loginWithDemoAccount();
+
+        final fakeService = FakeTeachingApiService();
+
+        // 1. Setup in-progress session (Step 2 of 3, 45% mastery)
+        const inProgressSessionId = 'session-in-progress-cap-001';
+        fakeService.activeSessions = [
+          ActiveTeachingSessionModel(
+            sessionId: inProgressSessionId,
+            topic: 'Distributed Systems',
+            conceptTitle: 'CAP Theorem Foundations',
+            currentStepIndex: 1,
+            totalSteps: 3,
+            masteryScore: 45.0,
+            updatedAt: DateTime.now(),
+          ),
+        ];
+
+        fakeService.savedSessions[inProgressSessionId] = TeachingSessionDetailModel(
+          sessionId: inProgressSessionId,
+          topic: 'Distributed Systems',
+          currentState: 'check_understanding',
+          currentStepIndex: 1,
+          masteryScore: 45.0,
+          isCompleted: false,
+          turns: [
+            TeachingTurnModel(
+              sessionId: inProgressSessionId,
+              state: 'assess_prior_knowledge',
+              teacherMessage:
+                  'Before we start, what do you know about Distributed Systems?',
+              conceptTitle: 'Distributed Systems — Prior Knowledge',
+              checkQuestion:
+                  'Before we start, what do you know about Distributed Systems?',
+              masteryPercentage: 0.0,
+              currentStepNumber: 1,
+              totalSteps: 3,
+            ),
+            TeachingTurnModel(
+              sessionId: inProgressSessionId,
+              state: 'check_understanding',
+              teacherMessage:
+                  'CAP Theorem establishes that distributed data stores can only guarantee two out of Consistency, Availability, and Partition tolerance.',
+              conceptTitle: 'CAP Theorem Foundations',
+              checkQuestion: 'What does the "C" in CAP theorem represent?',
+              masteryPercentage: 45.0,
+              currentStepNumber: 2,
+              totalSteps: 3,
+              suggestedActions: [
+                'Consistency',
+                'Concurrency',
+                'Computation',
+              ],
+            ),
+          ],
+        );
+
+        // 2. Build Dashboard (HomeTab) inside a MaterialApp harness
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: ThemeData.dark(),
+            home: Scaffold(
+              body: HomeTab(
+                authController: authController,
+                onTabNavigate: (_) {},
+                teachingApiService: fakeService,
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // 3. Assert "Continue where you left off" card appears with correct info
+        expect(find.byKey(const Key('continue_session_card')), findsOneWidget);
+        expect(find.text('Distributed Systems'), findsOneWidget);
+        expect(find.textContaining('Step 2 of 3'), findsOneWidget);
+        expect(find.textContaining('45% Mastery'), findsOneWidget);
+
+        // 4. Tap Resume button
+        final resumeButton = find.byKey(const Key('resume_session_button'));
+        expect(resumeButton, findsOneWidget);
+        await tester.tap(resumeButton);
+        await tester.pumpAndSettle(const Duration(seconds: 1));
+
+        // 5. Assert dialogue is restored in InteractiveTeacherScreen
+        expect(
+          find.textContaining('CAP Theorem establishes that distributed data stores'),
+          findsOneWidget,
+        );
+        expect(find.text('Mastery: 45%'), findsOneWidget);
+        expect(find.byKey(const Key('teacher_answer_field')), findsOneWidget);
+
+        // 6. Leave mid-way using the Back button
+        final backButton = find.byType(BackButton);
+        expect(backButton, findsOneWidget);
+        await tester.tap(backButton);
+        await tester.pumpAndSettle();
+
+        // 7. Assert returned to dashboard and the card is still present
+        expect(find.byKey(const Key('continue_session_card')), findsOneWidget);
       },
     );
   });

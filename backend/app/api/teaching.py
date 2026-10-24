@@ -1,3 +1,4 @@
+from typing import List
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
@@ -6,8 +7,15 @@ from app.api.deps import get_current_user
 from app.search.hybrid import KnowledgeSearchService
 from app.embeddings import get_embedding_provider
 from app.tutor.providers import get_llm_provider
-from app.teaching.models import StartTeachingRequest, StudentResponseRequest, TeacherTurnResponse, TeachingSessionModel
+from app.teaching.models import (
+    StartTeachingRequest,
+    StudentResponseRequest,
+    TeacherTurnResponse,
+    TeachingSessionModel,
+    ActiveSessionSummary,
+)
 from app.teaching.engine import TeachingEngine
+from app.teaching.service import TeachingSessionService
 
 router = APIRouter(prefix="/teaching", tags=["AI Teaching Engine"])
 
@@ -72,6 +80,31 @@ async def interact_with_teacher(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error evaluating student response: {str(e)}",
         )
+
+@router.get("/sessions/active", response_model=List[ActiveSessionSummary])
+async def get_active_teaching_sessions(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    List all active (incomplete) teaching sessions for the authenticated student.
+    Returns session id, topic/concept title, current step index and total steps,
+    mastery score, and last-updated time, scoped strictly to the authenticated user.
+    """
+    sessions = await TeachingSessionService.get_active_sessions_for_user(db, current_user.id)
+    return [
+        ActiveSessionSummary(
+            session_id=s.session_id,
+            topic=s.topic,
+            concept_title=s.current_step.title if s.current_step else s.topic,
+            current_step_index=s.current_step_index,
+            total_steps=s.total_steps if s.total_steps > 0 else 1,
+            mastery_score=s.mastery_score,
+            updated_at=s.updated_at,
+            last_updated=s.updated_at,
+        )
+        for s in sessions
+    ]
 
 @router.get("/{session_id}", response_model=TeachingSessionModel)
 async def get_teaching_session(

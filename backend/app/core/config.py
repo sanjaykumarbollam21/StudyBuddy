@@ -34,7 +34,7 @@ class Settings(BaseSettings):
     OFFLINE_ONLY: bool = False
     AI_DEFAULT_PROVIDER: str = "gemini" # gemini, openai, mock
     GEMINI_API_KEY: str = ""
-    GEMINI_MODEL: str = "gemini-1.5-flash"
+    GEMINI_MODEL: str = "gemini-3.5-flash-lite"
     OPENAI_API_KEY: str = ""
     OPENAI_MODEL: str = "gpt-4o-mini"
     ANTHROPIC_API_KEY: str = ""

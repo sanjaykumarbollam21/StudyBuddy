@@ -2,7 +2,7 @@ from datetime import datetime, timezone, timedelta
 from typing import Optional, List, Dict, Any
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from sqlalchemy import delete, and_
+from sqlalchemy import delete, and_, func
 
 from app.models.learning import TeachingSessionDB
 from app.teaching.models import TeachingSessionModel
@@ -211,10 +211,9 @@ class TeachingSessionService:
         Returns number of deleted rows.
         """
         cutoff = datetime.now(timezone.utc) - timedelta(hours=older_than_hours)
-        # Using datetime directly is supported by SQLAlchemy
         stmt = delete(TeachingSessionDB).where(
             and_(
-                TeachingSessionDB.updated_at < cutoff,
+                func.coalesce(TeachingSessionDB.updated_at, TeachingSessionDB.created_at) < cutoff,
                 TeachingSessionDB.is_completed == False,
             )
         )
