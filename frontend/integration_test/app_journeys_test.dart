@@ -6,7 +6,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:frontend/features/auth/controllers/auth_controller.dart';
 import 'package:frontend/features/auth/screens/login_screen.dart';
 import 'package:frontend/features/dashboard/screens/main_shell_screen.dart';
-import 'package:frontend/features/dashboard/screens/home_tab.dart';
 import 'package:frontend/features/dashboard/screens/tutor_sheet.dart';
 import 'package:frontend/features/documents/models/document_model.dart';
 import 'package:frontend/features/documents/screens/document_detail_screen.dart';
